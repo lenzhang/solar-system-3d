@@ -959,8 +959,8 @@ function initApp() {
             target.pos = [planet.group.position.x, 0, planet.group.position.z];
           }
         }
-        tourTimer += 0.016;
         if (tourPhase === 0) { // orbit - 环绕观察
+          tourTimer += 0.016;
           const orbitSpeed = 0.5;
           const orbitRadius = Math.sqrt(target.camOffset[0] * target.camOffset[0] + target.camOffset[2] * target.camOffset[2]);
           const baseAngle = Math.atan2(camera.position.z - target.pos[2], camera.position.x - target.pos[0]);
