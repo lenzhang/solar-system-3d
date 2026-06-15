@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D 太阳系演示</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Microsoft YaHei', sans-serif; }
+canvas { display: block; }
+
+#controls {
+  position: absolute; top: 15px; left: 15px;
+  background: rgba(0,0,0,0.7); padding: 12px; border-radius: 10px;
+  color: #fff; z-index: 100;
+}
+#controls h3 { margin-bottom: 8px; font-size: 14px; color: #ffcc00; }
+#controls button {
+  background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+  color: #fff; padding: 5px 10px; margin: 3px; border-radius: 5px; cursor: pointer;
+  font-size: 12px;
+}
+#controls button:hover { background: rgba(255,255,255,0.3); }
+#controls button.active { background: rgba(255,204,0,0.3); border-color: #ffcc00; }
+#controls label { font-size: 12px; display: block; margin-top: 8px; }
+#controls input[type=range] { width: 100%; margin-top: 3px; }
+
+#planet-info {
+  position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.8); padding: 15px 25px; border-radius: 10px;
+  color: #fff; max-width: 500px; text-align: center; display: none; z-index: 100;
+  border: 1px solid rgba(255,204,0,0.5);
+}
+#planet-info h4 { color: #ffcc00; margin-bottom: 5px; }
+#planet-info p { font-size: 13px; color: #ccc; }
+
+#loading {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: #000; display: flex; align-items: center; justify-content: center;
+  flex-direction: column; z-index: 9999; color: #fff;
+}
+#loading .spinner {
+  width: 50px; height: 50px; border: 3px solid rgba(255,204,0,0.3);
+  border-top-color: #ffcc00; border-radius: 50%; animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading p { margin-top: 15px; color: #ffcc00; }
+</style>
+</head>
+<body>
+<div id="loading">
+  <div class="spinner"></div>
+  <p>正在加载太阳系资源...</p>
+</div>
+
+<div id="controls">
+  <h3>🌌 太阳系控制面板</h3>
+  <button id="btn-pause">⏸ 暂停</button>
+  <button id="btn-reset">🔄 重置</button>
+  <button id="btn-tour">🚀 星系漫游</button>
+  <button id="btn-orbits" class="active">◯ 轨道</button>
+  <button id="btn-labels" class="active">🏷 标签</button>
+  <button id="btn-asteroid" class="active">☄ 小行星带</button>
+  <button id="btn-moons" class="active">🌙 卫星</button>
+  <button id="btn-comets" class="active">☄ 彗星</button>
+  <label>速度: <span id="speed-val">0.3</span>x</label>
+  <input type="range" id="speed" min="0" max="5" step="0.1" value="0.3">
+</div>
+
+<!-- 左侧星体列表 -->
+<div id="body-list" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.6);padding:6px 4px;border-radius:6px;color:#fff;z-index:100;border:1px solid rgba(255,204,0,0.2);font-size:10px;white-space:nowrap;">
+  <h4 style="color:#ffcc00;margin:0 0 4px 4px;font-size:10px;">🪐 星体</h4>
+  <div id="body-list-items"></div>
+</div>
+
+<div id="tour-status" style="position:absolute;top:15px;right:15px;background:rgba(0,0,0,0.7);padding:10px 15px;border-radius:8px;color:#ffcc00;font-size:13px;display:none;z-index:100;border:1px solid rgba(255,204,0,0.3);">
+  <span id="tour-text"></span>
+</div>
+
+<div id="planet-info">
+  <h4 id="info-name"></h4>
+  <p id="info-details"></p>
+</div>
+
+<script src="assets/three.min.js"></script>
+<script>
+// 强制暴露 THREE 到 window, 解决 WKWebView 中 UMD 构建不暴露全局变量的问题
+if (typeof THREE === 'undefined') {
+  // 尝试从 globalThis 获取
+  if (typeof globalThis !== 'undefined' && globalThis.THREE) {
+    window.THREE = globalThis.THREE;
+  }
+}
+console.log('THREE version:', typeof THREE !== 'undefined' ? THREE.REVISION : 'NOT LOADED');
+</script>
+<script src="assets/OrbitControls.js"></script>
+<script>
+// 等待 THREE 和 OrbitControls 加载完成
+function initApp() {
+  if (typeof THREE === 'undefined') {
+    console.error('THREE is not defined!');
+    document.getElementById('loading').innerHTML = '<p style="color:red">Three.js 加载失败，请检查 assets/three.min.js 文件</p>';
+    return;
+  }
+  if (typeof THREE.OrbitControls === 'undefined') {
+    console.error('OrbitControls is not defined!');
+    document.getElementById('loading').innerHTML = '<p style="color:red">OrbitControls 加载失败，请检查 assets/OrbitControls.js 文件</p>';
+    return;
+  }
+
+  console.log('THREE 和 OrbitControls 加载成功，开始初始化场景...');
+
+  // 场景
+  const scene = new THREE.Scene();
+
+  // 渲染器 - 关闭 shadows 避免 WKWebView 兼容性问题
+  // WKWebView在不可见状态下 window.innerWidth/Height 可能为0，使用 fallback
+  const fallbackW = Math.max(window.innerWidth, 800);
+  const fallbackH = Math.max(window.innerHeight, 600);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setSize(fallbackW, fallbackH);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  document.body.appendChild(renderer.domElement);
+
+  // 相机初始位置 - 调整到适合放大后的太阳系
+  const camera = new THREE.PerspectiveCamera(60, fallbackW / fallbackH, 0.1, 10000);
+  camera.position.set(0, 250, 400);
+
+  // 控制器
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.minDistance = 1;
+  controls.maxDistance = 800;
+
+  // 环境光
+  const ambientLight = new THREE.AmbientLight(0x333333);
+  scene.add(ambientLight);
+
+  // 点光源（太阳）
+  const sunLight = new THREE.PointLight(0xffffff, 2, 600);
+  scene.add(sunLight);
+
+  // 状态
+  let isPaused = false;
+  let showOrbits = true;
+  let showLabels = true;
+  let showAsteroid = true;
+  let showMoons = true;
+  let showComets = true;
+  let speedMultiplier = 0.3;
+
+  const planets = [];
+  const moons = [];
+
+  // 星空背景 - 优化: 减少粒子数, 关闭depthWrite提升性能
+  function createStarfield() {
+    const count = 8000; // 优化: 15000 -> 8000, WKWebView性能更好
+    const starsGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const radius = 1000 + Math.random() * 2000;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i3] = radius * Math.sin(phi) * Math.cos(theta);
+      positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+      positions[i3 + 2] = radius * Math.cos(phi);
+      const c = 0.5 + Math.random() * 0.5;
+      colors[i3] = c;
+      colors[i3 + 1] = c;
+      colors[i3 + 2] = c;
+    }
+    starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    starsGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const starsMaterial = new THREE.PointsMaterial({ size: 1.5, vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false });
+    scene.add(new THREE.Points(starsGeometry, starsMaterial));
+  }
+  createStarfield();
+
+  // 创建标签 - 根据相机距离动态调整大小
+  function createLabel(name) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.font = 'bold 64px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, 128, 64);
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(15, 7.5, 1);
+    sprite.baseScale = 1; // 基础缩放比例
+    return sprite;
+  }
+
+  // 使用 TextureLoader 加载所有纹理, 等全部加载完再初始化
+  const tLoader = new THREE.TextureLoader();
+  tLoader.setCrossOrigin('*');  // WKWebView需要显式设置crossOrigin
+  const assetPath = 'assets/';
+
+  // 纹理文件名列表
+  const textureFiles = [
+    'sun.jpg', 'mercury.jpg', 'venus.jpg', 'earth.jpg', 'mars.jpg',
+    'jupiter.jpg', 'saturn.jpg', 'uranus.jpg', 'neptune.jpg', 'moon.jpg', 'saturn_ring.jpg'
+  ];
+
+  // 创建 fallback 纹理
+  function createFallbackTexture(file, color) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(150, 100, 20, 350, 180, 200);
+    grad.addColorStop(0, color || '#cccccc');
+    grad.addColorStop(1, '#333333');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 256);
+    for (let i = 0; i < 500; i++) {
+      ctx.fillStyle = `rgba(${Math.random()*255|0},${Math.random()*255|0},${Math.random()*255|0},0.3)`;
+      ctx.fillRect(Math.random()*512, Math.random()*256, 3, 3);
+    }
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  const fallbackColors = {
+    'sun.jpg': '#ffaa00', 'mercury.jpg': '#aaaaaa', 'venus.jpg': '#e8c060',
+    'earth.jpg': '#4488ff', 'mars.jpg': '#cc6644', 'jupiter.jpg': '#ddaa77',
+    'saturn.jpg': '#e8d080', 'uranus.jpg': '#88ccdd', 'neptune.jpg': '#4466ee',
+    'moon.jpg': '#bbbbbb', 'saturn_ring.jpg': '#ccbb88'
+  };
+
+  // 使用 Promise 等待所有纹理加载完成
+  const texturePromises = textureFiles.map(file =>
+    new Promise((resolve) => {
+      tLoader.load(
+        assetPath + file,
+        (tex) => {
+          console.log('纹理加载成功:', file);
+          resolve({ file, texture: tex });
+        },
+        undefined,
+        (err) => {
+          console.error('纹理加载失败,使用fallback:', file);
+          resolve({ file, texture: createFallbackTexture(file, fallbackColors[file] || '#888888') });
+        }
+      );
+    })
+  );
+
+  Promise.all(texturePromises).then((results) => {
+    console.log('所有纹理加载完成，开始创建场景...');
+
+    // 从结果中提取纹理
+    const texMap = {};
+    results.forEach(r => texMap[r.file] = r.texture);
+
+    const sunTexture = texMap['sun.jpg'];
+    const mercuryTexture = texMap['mercury.jpg'];
+    const venusTexture = texMap['venus.jpg'];
+    const earthTexture = texMap['earth.jpg'];
+    const marsTexture = texMap['mars.jpg'];
+    const jupiterTexture = texMap['jupiter.jpg'];
+    const saturnTexture = texMap['saturn.jpg'];
+    const uranusTexture = texMap['uranus.jpg'];
+    const neptuneTexture = texMap['neptune.jpg'];
+    const moonTexture = texMap['moon.jpg'];
+    const saturnRingTexture = texMap['saturn_ring.jpg'];
+
+    // 创建太阳 - 使用高段位数球体 + 自发光材质
+    const sunGeometry = new THREE.SphereGeometry(12, 64, 64);
+    const sunMaterial = new THREE.MeshBasicMaterial({
+      map: sunTexture,
+      color: 0xffffaa  // 给太阳一个暖黄色基调
+    });
+    const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+    scene.add(sun);
+
+    // 太阳光晕 - 使用 Sprite
+    const glowCanvas = document.createElement('canvas');
+    glowCanvas.width = 256;
+    glowCanvas.height = 256;
+    const glowCtx = glowCanvas.getContext('2d');
+    const gradient = glowCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    gradient.addColorStop(0, 'rgba(255, 200, 50, 0.6)');
+    gradient.addColorStop(0.5, 'rgba(255, 150, 0, 0.2)');
+    gradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+    glowCtx.fillStyle = gradient;
+    glowCtx.fillRect(0, 0, 256, 256);
+    const glowTexture = new THREE.CanvasTexture(glowCanvas);
+    const glowMaterial = new THREE.SpriteMaterial({
+      map: glowTexture,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const sunGlow = new THREE.Sprite(glowMaterial);
+    sunGlow.scale.set(30, 30, 1);
+    sun.add(sunGlow);
+
+    // 太阳标签
+    const sunLabel = createLabel('☀ 太阳');
+    sunLabel.position.y = 14;
+    sun.add(sunLabel);
+
+    // 太阳半径 = 12, 行星半径按真实比例缩放 (整体放大2倍，方便查看细节)
+    // 真实比例: 木星直径是地球的11倍, 地球是水球的1.9倍
+    // 太阳半径: 12
+    // 木星: 3.6 (直径比地球大11倍 -> 3.6 vs 0.66)
+    // 土星: 3.0
+    // 天王星: 1.8
+    // 海王星: 1.7
+    // 地球: 0.66
+    // 金星: 0.6
+    // 火星: 0.5
+    // 水星: 0.36
+    // 轨道距离也整体放大，使用对数缩放
+
+    // 行星数据 - 精确的相对比例和真实轨道周期
+    const planetData = [
+      { name: '水星', radius: 0.36, distance: 30, speed: 4.148, texture: mercuryTexture, tilt: 0.034, color: 0xaaaaaa, info: '距太阳最近的行星，表面温差极大（-173°C~427°C）。无大气层保护，布满陨石坑。轨道周期88天，自转周期59天。直径4879km，是太阳系最小的行星。', desc: '【解说】水星是太阳系中最小的行星，也是距太阳最近的行星。由于几乎没有大气层，水星表面的温差极为剧烈，白天温度可达427°C，夜晚则骤降至-173°C。水星表面布满了陨石坑，看起来非常像我们的月球。它没有卫星，也没有环系统。' },
+      { name: '金星', radius: 0.60, distance: 45, speed: 1.624, texture: venusTexture, tilt: 177.4, color: 0xe8c060, info: '太阳系最热的行星，表面温度高达462°C。拥有浓厚的CO₂大气层，产生强烈温室效应。逆向自转，自转周期243天比公转周期225天还长。直径12104km，与地球大小相近。', desc: '【解说】金星是太阳系中最热的行星，虽然它不是离太阳最近的，但浓厚的二氧化碳大气层产生了极端的温室效应，使表面温度高达462°C。金星的自转方向与其他行星相反（逆向自转），而且自转周期比公转周期还长！这意味着金星上的一天比一年还长。金星没有卫星。' },
+      { name: '地球', radius: 0.66, distance: 60, speed: 1.0, texture: earthTexture, tilt: 23.4, color: 0x4488ff, info: '我们的家园，已知唯一存在生命的行星。71%表面被水覆盖，拥有含氧大气层。直径12756km，拥有一颗天然卫星——月球。轨道周期365天，自转周期24小时。', desc: '【解说】地球是太阳系中唯一已知存在生命的行星。月球是地球唯一的天然卫星，直径3474km，距地球约38万公里。月球的潮汐力影响着地球的海洋潮汐，也稳定了地球的自转轴倾斜。月球表面布满了陨石坑和月海，是人类探索太空的第一个踏脚石。' },
+      { name: '火星', radius: 0.50, distance: 72, speed: 0.530, texture: marsTexture, tilt: 25.2, color: 0xcc6644, info: '红色星球，因表面富含氧化铁而呈现红色。拥有太阳系最高峰奥林帕斯山（21.9km）和最大峡谷水手号谷。有2颗卫星，轨道周期687天。是人类探索的重点目标。', desc: '【解说】火星拥有两颗小卫星：火卫一（Phobos）和火卫二（Deimos），它们形状不规则，可能是被火星引力捕获的小行星。火卫一距火星非常近，正在缓慢螺旋靠近火星，预计约5000万年后会撞向火星或碎裂成环。火星是人类深空探索的重要目标，已有多个探测器成功着陆。' },
+      { name: '木星', radius: 3.60, distance: 110, speed: 0.084, texture: jupiterTexture, tilt: 3.1, color: 0xddaa77, info: '太阳系最大的行星，直径142984km，质量是其他行星总和的2.5倍。著名的大红斑风暴已持续数百年。拥有95颗已知卫星，包括伽利略四卫星。轨道周期11.86年，自转周期仅9.9小时。', desc: '【解说】木星拥有95颗已知卫星，其中最大的四颗——木卫一（伊奥）、木卫二（欧罗巴）、木卫三（盖尼米德）和木卫四（卡利斯托）被称为伽利略卫星。木卫二冰层下可能存在液态海洋，是寻找地外生命的重要目标。木卫三是太阳系最大的卫星，比水星还大。木卫一是太阳系火山活动最活跃的天体。' },
+      { name: '土星', radius: 3.00, distance: 145, speed: 0.034, texture: saturnTexture, tilt: 26.7, hasRings: true, color: 0xe8d080, info: '以壮观的环系统闻名，环由冰和岩石碎片组成，宽度达28万公里。密度低于水，是太阳系最轻的行星。拥有146颗已知卫星，土卫六（泰坦）是第二大卫星。轨道周期29.46年。', desc: '【解说】土星拥有146颗已知卫星，是太阳系卫星数量最多的行星。土卫六（泰坦）是太阳系第二大卫星，拥有浓厚的大气层和液态甲烷湖泊，是研究生命起源的重要目标。土卫二（恩克拉多斯）冰喷泉中可能含有生命所需的有机物质。土卫五（瑞亚）可能拥有微弱的环系统。' },
+      { name: '天王星', radius: 1.80, distance: 195, speed: 0.018, texture: uranusTexture, tilt: 97.8, color: 0x88ccdd, info: '侧躺旋转的冰巨星（自转轴倾斜97.8°），拥有13条环和27颗已知卫星。大气层主要由氢、氦和甲烷组成，呈现独特的蓝绿色。轨道周期84年，自转周期约17小时。', desc: '【解说】天王星的自转轴倾斜97.8°，几乎是"侧躺"在轨道上运行的，这导致它的季节变化极为极端。拥有27颗已知卫星，全部以莎士比亚和亚历山大·蒲柏作品中的角色命名。天卫三（泰坦尼亚）和天卫四（奥伯龙）是其中最大的两颗。天王星的13条环非常暗淡，直到1977年才发现。' },
+      { name: '海王星', radius: 1.70, distance: 260, speed: 0.015, texture: neptuneTexture, tilt: 28.3, color: 0x4466ee, info: '太阳系最远的行星，风速可达2100km/h，拥有16颗已知卫星。轨道周期165年，自转周期约16小时。大气层富含甲烷，呈现独特的深蓝色。拥有微弱但可见的环系统。', desc: '【解说】海王星是太阳系中风速最快的行星，风速可达2100km/h。拥有16颗已知卫星，其中海卫一（特里同）是最大的，也是太阳系中唯一逆行公转的大卫星，可能是被海王星引力捕获的柯伊伯带天体。海卫二（奈瑞德）拥有太阳系中偏心率最大的卫星轨道。海卫一表面有冰火山，可能拥有地下海洋。' }
+    ];
+
+    // 创建行星
+    planetData.forEach(pd => {
+      // 行星组（用于自转轴倾斜）
+      const planetGroup = new THREE.Group();
+
+      // 行星球体 - 使用高段位数确保球体圆润
+      const geometry = new THREE.SphereGeometry(pd.radius, 48, 48);
+      const material = new THREE.MeshPhongMaterial({
+        map: pd.texture,
+        shininess: 15,
+        specular: 0x222222
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+
+      // 自转轴倾斜
+      mesh.rotation.z = (pd.tilt || 0) * Math.PI / 180;
+      planetGroup.add(mesh);
+
+      // 轨道组
+      const orbitGroup = new THREE.Group();
+      orbitGroup.add(planetGroup);
+      scene.add(orbitGroup);
+
+      // 轨道线
+      const orbitCurve = new THREE.EllipseCurve(0, 0, pd.distance, pd.distance, 0, 2 * Math.PI, false, 0);
+      const orbitPts = orbitCurve.getPoints(128);
+      const orbitGeo = new THREE.BufferGeometry().setFromPoints(orbitPts.map(p => new THREE.Vector3(p.x, 0, p.y)));
+      const orbitLine = new THREE.Line(orbitGeo, new THREE.LineBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.4 }));
+      scene.add(orbitLine);
+
+      // 标签
+      const label = createLabel(pd.name);
+      label.position.y = pd.radius + 3;
+      planetGroup.add(label);
+
+      planets.push({
+        group: planetGroup,
+        orbit: orbitGroup,
+        mesh: mesh,
+        label: label,
+        orbitLine: orbitLine,
+        data: pd,
+        angle: Math.random() * Math.PI * 2  // 随机初始角度
+      });
+    });
+
+    // 小行星带（火星和木星之间）- 优化粒子数
+    let asteroidBelt;
+    function createAsteroidBelt() {
+      const count = 2000; // 优化: 3000 -> 2000
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 82 + Math.random() * 16;  // 火星(72)和木星(110)之间
+        const height = (Math.random() - 0.5) * 4;
+        positions[i3] = Math.cos(angle) * radius;
+        positions[i3 + 1] = height;
+        positions[i3 + 2] = Math.sin(angle) * radius;
+        const c = 0.3 + Math.random() * 0.4;
+        colors[i3] = c;
+        colors[i3 + 1] = c * 0.9;
+        colors[i3 + 2] = c * 0.7;
+      }
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const material = new THREE.PointsMaterial({
+        size: 0.5,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false
+      });
+      asteroidBelt = new THREE.Points(geometry, material);
+      scene.add(asteroidBelt);
+    }
+    createAsteroidBelt();
+
+    // 柯伊伯带（海王星之外）- 优化粒子数
+    let kuiperBelt;
+    function createKuiperBelt() {
+      const count = 1500; // 优化: 2000 -> 1500
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 280 + Math.random() * 150;
+        const height = (Math.random() - 0.5) * 15;
+        positions[i3] = Math.cos(angle) * radius;
+        positions[i3 + 1] = height;
+        positions[i3 + 2] = Math.sin(angle) * radius;
+        const c = 0.2 + Math.random() * 0.3;
+        colors[i3] = c;
+        colors[i3 + 1] = c;
+        colors[i3 + 2] = c * 1.2;
+      }
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const material = new THREE.PointsMaterial({
+        size: 0.8,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false
+      });
+      kuiperBelt = new THREE.Points(geometry, material);
+      scene.add(kuiperBelt);
+    }
+    createKuiperBelt();
+
+    // 卫星数据 - 按比例调整: 地球半径0.66, 月球半径0.18 (地球的1/4), 距离3.5
+    const moonDataList = [
+      // 地球
+      { parent: '地球', name: '月球', radius: 0.18, distance: 3.5, speed: 3.0, texture: moonTexture },
+      // 火星 (半径0.5)
+      { parent: '火星', name: '火卫一', radius: 0.08, distance: 2.0, speed: 5.0, texture: moonTexture },
+      { parent: '火星', name: '火卫二', radius: 0.06, distance: 2.5, speed: 3.5, texture: moonTexture },
+      // 木星 (半径3.6) - 伽利略四卫星
+      { parent: '木星', name: '木卫一', radius: 0.15, distance: 6.5, speed: 4.0, texture: moonTexture },
+      { parent: '木星', name: '木卫二', radius: 0.14, distance: 7.5, speed: 3.0, texture: moonTexture },
+      { parent: '木星', name: '木卫三', radius: 0.18, distance: 9.0, speed: 2.2, texture: moonTexture },
+      { parent: '木星', name: '木卫四', radius: 0.16, distance: 10.5, speed: 1.6, texture: moonTexture },
+      // 土星 (半径3.0)
+      { parent: '土星', name: '土卫六', radius: 0.16, distance: 7.0, speed: 2.5, texture: moonTexture },
+      { parent: '土星', name: '土卫二', radius: 0.08, distance: 5.5, speed: 3.8, texture: moonTexture },
+      { parent: '土星', name: '土卫五', radius: 0.10, distance: 8.0, speed: 2.0, texture: moonTexture },
+      // 天王星 (半径1.8)
+      { parent: '天王星', name: '天卫三', radius: 0.10, distance: 4.0, speed: 2.8, texture: moonTexture },
+      { parent: '天王星', name: '天卫四', radius: 0.08, distance: 4.8, speed: 2.0, texture: moonTexture },
+      // 海王星 (半径1.7)
+      { parent: '海王星', name: '海卫一', radius: 0.10, distance: 4.0, speed: 2.5, texture: moonTexture },
+      { parent: '海王星', name: '海卫二', radius: 0.08, distance: 5.0, speed: 1.8, texture: moonTexture },
+    ];
+
+    // 创建卫星
+    moonDataList.forEach(md => {
+      const parentPlanet = planets.find(p => p.data.name === md.parent);
+      if (!parentPlanet) return;
+
+      const moonGeometry = new THREE.SphereGeometry(md.radius, 16, 16);
+      const moonMaterial = new THREE.MeshPhongMaterial({
+        map: md.texture,
+        emissive: 0x111111,
+        emissiveIntensity: 0.2,
+        shininess: 10
+      });
+      const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
+      parentPlanet.group.add(moonMesh);
+
+      moons.push({
+        mesh: moonMesh,
+        parent: parentPlanet,
+        data: md,
+        angle: Math.random() * Math.PI * 2
+      });
+    });
+
+    // 彗星系统 - 椭圆轨道, 有尾迹和标签
+    // 真实比例: 哈雷彗星远日点~95AU(远超海王星30AU), 恩克~28AU, 百武是长周期彗星
+    // 行星距离: 水星30, 金星45, 地球60, 火星72, 木星110, 土星145, 天王星195, 海王星260
+    // 哈雷彗星: 近日点~金星(45), 远日点>>海王星(500)，周期76年
+    // 恩克彗星: 近日点~火星(72), 远日点~土星(145)，周期3.3年
+    // 百武彗星: 近日点~地球(60), 远日点极远(600)，周期165年（长周期）
+    const cometDataList = [
+      { name: '哈雷彗星', periapsis: 45, apoapsis: 500, inclination: 164.6, period: 76, color: 0x88ccff },
+      { name: '恩克彗星', periapsis: 72, apoapsis: 145, inclination: 11.8, period: 3.3, color: 0xaaddff },
+      { name: '百武彗星', periapsis: 60, apoapsis: 600, inclination: 62.3, period: 165, color: 0xccddff }
+    ];
+
+    const comets = [];
+
+    cometDataList.forEach(cd => {
+      const cometGroup = new THREE.Group();
+      const cometGeo = new THREE.SphereGeometry(0.3, 12, 12);
+      const cometMat = new THREE.MeshPhongMaterial({
+        map: moonTexture,
+        emissive: cd.color,
+        emissiveIntensity: 0.8,
+        shininess: 30
+      });
+      const cometMesh = new THREE.Mesh(cometGeo, cometMat);
+      cometGroup.add(cometMesh);
+
+      // 彗尾 - 粒子系统, 优化: 40 -> 25 粒子
+      const tailLength = 25;
+      const tailGeo = new THREE.BufferGeometry();
+      const tailPositions = new Float32Array(tailLength * 3);
+      for (let i = 0; i < tailLength; i++) {
+        tailPositions[i * 3] = 0;
+        tailPositions[i * 3 + 1] = 0;
+        tailPositions[i * 3 + 2] = 0;
+      }
+      tailGeo.setAttribute('position', new THREE.BufferAttribute(tailPositions, 3));
+      const tailMat = new THREE.PointsMaterial({
+        size: 0.5,
+        color: cd.color,
+        transparent: true,
+        opacity: 0.6,
+        depthWrite: false
+      });
+      const tail = new THREE.Points(tailGeo, tailMat);
+      cometGroup.add(tail);
+
+      // 彗发 - 发光效果
+      const comaCanvas = document.createElement('canvas');
+      comaCanvas.width = 64;
+      comaCanvas.height = 64;
+      const comaCtx = comaCanvas.getContext('2d');
+      const comaGrad = comaCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      comaGrad.addColorStop(0, 'rgba(200, 230, 255, 0.8)');
+      comaGrad.addColorStop(1, 'rgba(200, 230, 255, 0)');
+      comaCtx.fillStyle = comaGrad;
+      comaCtx.fillRect(0, 0, 64, 64);
+      const comaTex = new THREE.CanvasTexture(comaCanvas);
+      const comaSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: comaTex,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      }));
+      comaSprite.scale.set(2, 2, 1);
+      cometGroup.add(comaSprite);
+
+      // 彗星标签 - 直接添加到scene, 不使用group, 避免被遮挡
+      const labelCanvas = document.createElement('canvas');
+      labelCanvas.width = 256;
+      labelCanvas.height = 64;
+      const labelCtx = labelCanvas.getContext('2d');
+      labelCtx.font = 'bold 28px sans-serif';
+      labelCtx.fillStyle = '#' + cd.color.toString(16).padStart(6, '0');
+      labelCtx.textAlign = 'center';
+      labelCtx.textBaseline = 'middle';
+      labelCtx.fillText('☄ ' + cd.name, 128, 32);
+      const labelTexture = new THREE.CanvasTexture(labelCanvas);
+      const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture, transparent: true, depthTest: false });
+      const cometLabel = new THREE.Sprite(labelMaterial);
+      cometLabel.scale.set(8, 2, 1);
+      scene.add(cometLabel);
+
+      // 轨道
+      const semiMajor = (cd.periapsis + cd.apoapsis) / 2;
+      const semiMinor = semiMajor * 0.55;
+      const orbitCurve = new THREE.EllipseCurve(0, 0, semiMajor, semiMinor, 0, 2 * Math.PI, false, 0);
+      const orbitPts = orbitCurve.getPoints(128);
+      const orbitGeo = new THREE.BufferGeometry().setFromPoints(orbitPts.map(p => new THREE.Vector3(p.x, 0, p.y)));
+      const orbitLine = new THREE.Line(orbitGeo, new THREE.LineBasicMaterial({ color: cd.color, transparent: true, opacity: 0.15 }));
+
+      // 倾斜轨道
+      const inclRad = cd.inclination * Math.PI / 180;
+      cometGroup.rotation.x = inclRad;
+      orbitLine.rotation.x = inclRad;
+
+      scene.add(cometGroup);
+      scene.add(orbitLine);
+
+      comets.push({
+        group: cometGroup,
+        mesh: cometMesh,
+        label: cometLabel,
+        tail: tail,
+        tailLength: tailLength,
+        orbitLine: orbitLine,
+        data: cd,
+        angle: Math.random() * Math.PI * 2
+      });
+    });
+
+    // 鼠标交互
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    // 双击行星 - 飞向该行星
+    renderer.domElement.addEventListener('dblclick', (event) => {
+      const w = Math.max(window.innerWidth, 800);
+      const h = Math.max(window.innerHeight, 600);
+      mouse.x = (event.clientX / w) * 2 - 1;
+      mouse.y = -(event.clientY / h) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const meshes = planets.map(p => p.mesh);
+      meshes.push(sun);
+      const intersects = raycaster.intersectObjects(meshes);
+
+      if (intersects.length > 0) {
+        const hit = intersects[0].object;
+        if (hit === sun) {
+          controls.target.set(0, 0, 0);
+        } else {
+          const planet = planets.find(p => p.mesh === hit);
+          if (planet) {
+            controls.target.copy(planet.group.position);
+          }
+        }
+      }
+    });
+
+    // 单击行星 - 显示信息
+    renderer.domElement.addEventListener('click', (event) => {
+      const w = Math.max(window.innerWidth, 800);
+      const h = Math.max(window.innerHeight, 600);
+      mouse.x = (event.clientX / w) * 2 - 1;
+      mouse.y = -(event.clientY / h) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const meshes = planets.map(p => p.mesh);
+      meshes.push(sun);
+      const intersects = raycaster.intersectObjects(meshes);
+
+      const planetInfo = document.getElementById('planet-info');
+      if (intersects.length > 0) {
+        const hit = intersects[0].object;
+        if (hit === sun) {
+          document.getElementById('info-name').textContent = '☀ 太阳';
+          document.getElementById('info-details').textContent = '太阳系的中心恒星，质量占太阳系总质量的99.86%，表面温度5500°C';
+        } else {
+          const planet = planets.find(p => p.mesh === hit);
+          if (planet) {
+            document.getElementById('info-name').textContent = planet.data.name;
+            document.getElementById('info-details').textContent = planet.data.info;
+          }
+        }
+        planetInfo.style.display = 'block';
+      } else {
+        planetInfo.style.display = 'none';
+      }
+    });
+
+    // 漫游时展示行星介绍
+    function showTourInfo(target) {
+      const planetInfo = document.getElementById('planet-info');
+      if (target.name === '太阳') {
+        document.getElementById('info-name').textContent = '☀ 太阳';
+        document.getElementById('info-details').textContent = '太阳系的中心恒星，质量占太阳系总质量的99.86%，表面温度5500°C';
+      } else {
+        const planet = planets.find(p => p.data.name === target.name);
+        if (planet) {
+          document.getElementById('info-name').textContent = target.name;
+          document.getElementById('info-details').textContent = target.desc;
+        }
+      }
+      planetInfo.style.display = 'block';
+    }
+
+    // 漫游功能
+    let isTouring = false;
+    let tourIndex = 0;
+    let tourPhase = 0; // 0=approach, 1=orbit, 2=leave
+    let tourTimer = 0;
+    const tourTargets = [
+      { name: '太阳', pos: [0, 0, 0], camOffset: [30, 20, 30], desc: '太阳 - 太阳系的中心恒星' },
+      ...planets.map(p => ({ name: p.data.name, pos: null, camOffset: [p.data.radius * 8, p.data.radius * 5, p.data.radius * 8], desc: p.data.info }))
+    ];
+
+    document.getElementById('btn-tour').addEventListener('click', function() {
+      isTouring = !isTouring;
+      this.textContent = isTouring ? '🛑 停止漫游' : '🚀 星系漫游';
+      this.classList.toggle('active');
+      if (isTouring) {
+        tourIndex = 0;
+        tourPhase = 0;
+        tourTimer = 0;
+        document.getElementById('tour-status').style.display = 'block';
+        document.getElementById('tour-text').textContent = '🚀 开始漫游: ' + tourTargets[tourIndex].name;
+      } else {
+        document.getElementById('tour-status').style.display = 'none';
+      }
+    });
+
+    // 控制按钮
+    document.getElementById('btn-pause').addEventListener('click', function() {
+      isPaused = !isPaused;
+      this.textContent = isPaused ? '▶ 继续' : '⏸ 暂停';
+      this.classList.toggle('active');
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', function() {
+      camera.position.set(0, 120, 200);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    });
+
+    document.getElementById('btn-orbits').addEventListener('click', function() {
+      showOrbits = !showOrbits;
+      this.classList.toggle('active');
+      planets.forEach(p => p.orbitLine.visible = showOrbits);
+    });
+
+    document.getElementById('btn-labels').addEventListener('click', function() {
+      showLabels = !showLabels;
+      this.classList.toggle('active');
+      planets.forEach(p => p.label.visible = showLabels);
+      sunLabel.visible = showLabels;
+    });
+
+    document.getElementById('btn-asteroid').addEventListener('click', function() {
+      showAsteroid = !showAsteroid;
+      this.classList.toggle('active');
+      asteroidBelt.visible = showAsteroid;
+      kuiperBelt.visible = showAsteroid;
+    });
+
+    document.getElementById('btn-moons').addEventListener('click', function() {
+      showMoons = !showMoons;
+      this.classList.toggle('active');
+      moons.forEach(m => m.mesh.visible = showMoons);
+    });
+
+    document.getElementById('btn-comets').addEventListener('click', function() {
+      showComets = !showComets;
+      this.classList.toggle('active');
+      comets.forEach(c => {
+        c.group.visible = showComets;
+        c.orbitLine.visible = showComets;
+      });
+    });
+
+    // 生成左侧星体列表
+    const bodyListItems = document.getElementById('body-list-items');
+    // 添加太阳
+    const sunBtn = document.createElement('button');
+    sunBtn.textContent = '☀ 太阳';
+    sunBtn.style.cssText = 'background:rgba(255,200,0,0.15);border:1px solid rgba(255,200,0,0.3);color:#ffcc00;padding:3px 5px;margin:1px 0;width:100%;text-align:left;cursor:pointer;border-radius:3px;font-size:10px;white-space:nowrap;';
+    sunBtn.onclick = () => focusOnBody({ name: '太阳', pos: [0,0,0], info: '太阳系的中心恒星，质量占太阳系总质量的99.86%，表面温度5500°C，直径139万公里。是离地球最近的恒星，类型为G2V黄矮星。' });
+    bodyListItems.appendChild(sunBtn);
+    
+    // 添加行星
+    planets.forEach(p => {
+      const btn = document.createElement('button');
+      btn.textContent = `● ${p.data.name}`;
+      const hex = p.data.color.toString(16).padStart(6, '0');
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      btn.style.cssText = `background:rgba(${r},${g},${b},0.15);border:1px solid rgba(${r},${g},${b},0.3);color:#fff;padding:3px 5px;margin:1px 0;width:100%;text-align:left;cursor:pointer;border-radius:3px;font-size:10px;white-space:nowrap;`;
+      btn.onclick = () => focusOnBody({ name: p.data.name, pos: null, info: p.data.info, planet: p, desc: p.data.desc });
+      bodyListItems.appendChild(btn);
+    });
+
+// 聚焦到指定星体
+    let isFollowing = false;
+    let followTarget = null;
+    let followTransition = 0;
+    let followStartPos = null;
+    let followEndPos = null;
+    let followStartTarget = null;
+    let followEndTarget = null;
+
+    function focusOnBody(target) {
+      // 停止漫游
+      if (isTouring) {
+        isTouring = false;
+        document.getElementById('btn-tour').textContent = '🚀 星系漫游';
+        document.getElementById('btn-tour').classList.remove('active');
+        document.getElementById('tour-status').style.display = 'none';
+      }
+
+      // 设置追踪目标
+      isFollowing = true;
+      followTarget = target;
+
+      // 计算目标位置
+      let targetPos = target.pos;
+      if (target.planet) {
+        targetPos = [target.planet.group.position.x, 0, target.planet.group.position.z];
+      }
+
+      // 根据星体大小计算合适的观察距离
+      let viewDistance = 30; // 默认距离
+      if (target.name === '太阳') viewDistance = 50;
+      else if (target.planet) {
+        const radius = target.planet.data.radius;
+        viewDistance = Math.max(15, radius * 8); // 根据行星大小调整距离
+      }
+
+      const endPos = [targetPos[0] + viewDistance, viewDistance * 0.6, targetPos[2] + viewDistance];
+      const startPos = [camera.position.x, camera.position.y, camera.position.z];
+      const startTarget = [controls.target.x, controls.target.y, controls.target.z];
+      const endTarget = [targetPos[0], targetPos[1], targetPos[2]];
+
+      followStartPos = startPos;
+      followEndPos = endPos;
+      followStartTarget = startTarget;
+      followEndTarget = endTarget;
+      followTransition = 0;
+
+      // 显示星体信息
+      const planetInfo = document.getElementById('planet-info');
+      document.getElementById('info-name').textContent = target.name;
+      document.getElementById('info-details').textContent = target.info;
+      // 显示解说
+      if (target.desc) {
+        document.getElementById('info-details').textContent += '\n\n' + target.desc;
+      }
+      planetInfo.style.display = 'block';
+    }
+
+    document.getElementById('speed').addEventListener('input', function() {
+      speedMultiplier = parseFloat(this.value);
+      document.getElementById('speed-val').textContent = speedMultiplier.toFixed(1);
+    });
+
+    // 隐藏加载界面
+    document.getElementById('loading').style.display = 'none';
+
+    // 动画循环
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // 漫游逻辑 - 在暂停时也运行，允许漫游覆盖相机控制
+      if (isTouring) {
+        const target = tourTargets[tourIndex];
+        // 更新行星目标位置（太阳位置固定为0,0,0）
+        if (target.name !== '太阳') {
+          const planet = planets.find(p => p.data.name === target.name);
+          if (planet) {
+            target.pos = [planet.group.position.x, 0, planet.group.position.z];
+          }
+        }
+        tourTimer += 0.016;
+        if (tourPhase === 0) { // approach - 接近目标
+          const startPos = [0, 120, 200];
+          const endPos = [target.pos[0] + target.camOffset[0], target.pos[1] + target.camOffset[1], target.pos[2] + target.camOffset[2]];
+          const t = Math.min(1, tourTimer / 3); // 3秒接近
+          camera.position.x = startPos[0] + (endPos[0] - startPos[0]) * t;
+          camera.position.y = startPos[1] + (endPos[1] - startPos[1]) * t;
+          camera.position.z = startPos[2] + (endPos[2] - startPos[2]) * t;
+          controls.target.lerp(new THREE.Vector3(target.pos[0], target.pos[1], target.pos[2]), 0.05);
+          if (t >= 1) {
+            tourPhase = 1;
+            tourTimer = 0;
+            showTourInfo(target);
+          }
+        } else if (tourPhase === 1) { // orbit - 环绕观察
+          const orbitSpeed = 0.5;
+          const orbitRadius = Math.sqrt(target.camOffset[0] * target.camOffset[0] + target.camOffset[2] * target.camOffset[2]);
+          const baseAngle = Math.atan2(camera.position.z - target.pos[2], camera.position.x - target.pos[0]);
+          const angle = baseAngle + orbitSpeed * 0.016;
+          camera.position.x = target.pos[0] + Math.cos(angle) * orbitRadius;
+          camera.position.z = target.pos[2] + Math.sin(angle) * orbitRadius;
+          camera.position.y = target.pos[1] + target.camOffset[1];
+          controls.target.set(target.pos[0], target.pos[1], target.pos[2]);
+          if (tourTimer > 4) { // 环绕4秒后离开
+            tourPhase = 2;
+            tourTimer = 0;
+          }
+        } else if (tourPhase === 2) { // leave - 离开并前往下一个
+          tourIndex++;
+          if (tourIndex >= tourTargets.length) {
+            tourIndex = 0; // 循环
+          }
+          tourPhase = 0;
+          tourTimer = 0;
+          document.getElementById('tour-text').textContent = '🚀 漫游中: ' + tourTargets[tourIndex].name;
+        }
+      }
+
+      // 追踪逻辑 - 点击星体后追踪其运动
+      if (isFollowing && followTarget) {
+        // 更新目标位置
+        let currentTargetPos = followTarget.pos;
+        if (followTarget.planet) {
+          currentTargetPos = [followTarget.planet.group.position.x, 0, followTarget.planet.group.position.z];
+        }
+        
+        // 计算当前帧的目标相机位置
+        let viewDistance = 30;
+        if (followTarget.name === '太阳') viewDistance = 50;
+        else if (followTarget.planet) {
+          const radius = followTarget.planet.data.radius;
+          viewDistance = Math.max(15, radius * 8);
+        }
+        
+        const currentEndPos = [currentTargetPos[0] + viewDistance, viewDistance * 0.6, currentTargetPos[2] + viewDistance];
+        
+        // 平滑过渡
+        if (followTransition < 1) {
+          followTransition += 0.02;
+          if (followTransition > 1) followTransition = 1;
+          const ease = followTransition < 0.5 ? 2 * followTransition * followTransition : 1 - Math.pow(-2 * followTransition + 2, 2) / 2;
+          
+          camera.position.x = followStartPos[0] + (followEndPos[0] - followStartPos[0]) * ease;
+          camera.position.y = followStartPos[1] + (followEndPos[1] - followStartPos[1]) * ease;
+          camera.position.z = followStartPos[2] + (followEndPos[2] - followStartPos[2]) * ease;
+          
+          controls.target.x = followStartTarget[0] + (followEndTarget[0] - followStartTarget[0]) * ease;
+          controls.target.y = followStartTarget[1] + (followEndTarget[1] - followStartTarget[1]) * ease;
+          controls.target.z = followStartTarget[2] + (followEndTarget[2] - followStartTarget[2]) * ease;
+        } else {
+          // 追踪模式 - 相机跟随目标运动
+          camera.position.x = currentEndPos[0];
+          camera.position.y = currentEndPos[1];
+          camera.position.z = currentEndPos[2];
+          
+          controls.target.x = currentTargetPos[0];
+          controls.target.y = currentTargetPos[1];
+          controls.target.z = currentTargetPos[2];
+        }
+      }
+
+      if (!isPaused) {
+        const dt = 0.016 * speedMultiplier;
+
+        // 太阳自转
+        sun.rotation.y += 0.05 * dt * 60;
+
+        // 行星公转和自转 - 同时动态调整标签大小
+        planets.forEach(p => {
+          p.angle += p.data.speed * dt * 0.5;
+          p.group.position.x = Math.cos(p.angle) * p.data.distance;
+          p.group.position.z = Math.sin(p.angle) * p.data.distance;
+          p.mesh.rotation.y += 0.2 * dt * 60;
+
+          // 动态标签缩放 - 根据相机距离调整，漫游时保持适中大小
+          const dist = camera.position.distanceTo(p.group.position);
+          // 使用对数缩放避免近距离时标签过大
+          const labelScale = Math.max(0.5, Math.min(1.5, Math.log(dist + 1) / 5));
+          p.label.scale.set(12 * labelScale, 6 * labelScale, 1);
+          // 漫游时标签稍微大一些以便阅读
+          if (isTouring) {
+            p.label.scale.set(14 * labelScale, 7 * labelScale, 1);
+          }
+        });
+
+        // 小行星带缓慢旋转
+        if (asteroidBelt) {
+          asteroidBelt.rotation.y += 0.002 * dt * 60;
+        }
+        if (kuiperBelt) {
+          kuiperBelt.rotation.y += 0.0005 * dt * 60;
+        }
+
+        // 卫星公转
+        moons.forEach(m => {
+          m.angle += m.data.speed * dt * 0.8;
+          m.mesh.position.x = Math.cos(m.angle) * m.data.distance;
+          m.mesh.position.z = Math.sin(m.angle) * m.data.distance;
+        });
+
+        // 彗星运动 - 椭圆轨道
+        comets.forEach(c => {
+          const cd = c.data;
+          const semiMajor = (cd.periapsis + cd.apoapsis) / 2;
+          const semiMinor = semiMajor * 0.55;
+          // 速度 = 1 / period (年), 恩克3.3年 -> 0.30, 哈雷76年 -> 0.013, 百武165年 -> 0.006
+          const speed = (1.0 / cd.period) * dt * 60 * 0.15;
+          c.angle += speed;
+
+          // 椭圆位置
+          const x = semiMajor * Math.cos(c.angle);
+          const z = semiMinor * Math.sin(c.angle);
+          c.mesh.position.x = x;
+          c.mesh.position.z = z;
+
+          // 更新标签位置 - 跟随彗星
+          const worldPos = new THREE.Vector3(x, 0, z);
+          c.group.localToWorld(worldPos);
+          c.label.position.copy(worldPos);
+          c.label.position.y += 3;
+
+          // 更新彗尾 - 指向远离太阳的方向
+          const tailPositions = c.tail.geometry.attributes.position.array;
+          const distToSun = Math.sqrt(x * x + z * z) || 1;
+          const dirX = -x / distToSun;
+          const dirZ = -z / distToSun;
+
+          // 优化: 减少随机数调用, 使用预计算偏移
+          for (let i = 0; i < c.tailLength; i++) {
+            const t = i / c.tailLength;
+            const tailLen = 5 + t * 15;
+            tailPositions[i * 3] = c.mesh.position.x + dirX * tailLen;
+            tailPositions[i * 3 + 1] = 0;
+            tailPositions[i * 3 + 2] = c.mesh.position.z + dirZ * tailLen;
+          }
+          c.tail.geometry.attributes.position.needsUpdate = true;
+        });
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // 窗口大小调整 - WKWebView fallback
+    window.addEventListener('resize', () => {
+      const w = Math.max(window.innerWidth, 800);
+      const h = Math.max(window.innerHeight, 600);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    });
+
+    console.log('太阳系初始化完成！行星数:', planets.length, '卫星数:', moons.length, '彗星数:', comets.length);
+  }).catch(err => {
+    console.error('初始化失败:', err);
+    console.error('错误堆栈:', err && err.stack || 'no stack');
+    console.error('错误名称:', err && err.name || 'no name');
+    var errorMsg = err ? (err.message || JSON.stringify(err)) : 'unknown error';
+    document.getElementById('loading').innerHTML = '<p style="color:red">初始化失败: ' + errorMsg + '</p>';
+  });
+}
+
+// 等待页面加载完成后初始化
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}
+</script>
+</body>
+</html>
