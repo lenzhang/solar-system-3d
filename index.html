@@ -714,6 +714,9 @@ function initApp() {
         tourPhase = 1; // 先 travel 到第一个目标
         tourTimer = 0;
         tourTravelProgress = 0;
+        // 设置 travel 起点为当前相机位置
+        tourTravelFromPos = camera.position.clone();
+        tourTravelFromTarget = controls.target.clone();
         document.getElementById('tour-status').style.display = 'block';
         document.getElementById('tour-text').textContent = '🚀 开始漫游: ' + tourTargets[tourIndex].name;
       } else {
@@ -927,31 +930,32 @@ function initApp() {
           if (tourTimer > 8) { // 环绕8秒后飞向下一个
             tourPhase = 1;
             tourTimer = 0;
-            // 记录当前位置作为 travel 起点
-            tourTravelFromPos = camera.position.clone();
-            tourTravelFromTarget = controls.target.clone();
-          }
-        } else if (tourPhase === 1) { // travel - 平滑飞向下一个星球
-          // 计算下一个目标
-          if (tourTravelToPos === null) {
+            // 递增到下一个目标
             tourIndex++;
             if (tourIndex >= tourTargets.length) {
               tourIndex = 0;
             }
-            const nextTarget = tourTargets[tourIndex];
-            if (nextTarget.name !== '太阳') {
-              const planet = planets.find(p => p.data.name === nextTarget.name);
+            // 记录当前位置作为 travel 起点
+            tourTravelFromPos = camera.position.clone();
+            tourTravelFromTarget = controls.target.clone();
+          }
+        } else if (tourPhase === 1) { // travel - 平滑飞向当前目标
+          // 计算目标位置（tourIndex 在 orbit→travel 时已经递增）
+          if (tourTravelToPos === null) {
+            const dest = tourTargets[tourIndex];
+            if (dest.name !== '太阳') {
+              const planet = planets.find(p => p.data.name === dest.name);
               if (planet) {
-                nextTarget.pos = [planet.group.position.x, 0, planet.group.position.z];
+                dest.pos = [planet.group.position.x, 0, planet.group.position.z];
               }
             }
-            tourTravelToPos = new THREE.Vector3(nextTarget.pos[0] + nextTarget.camOffset[0], nextTarget.pos[1] + nextTarget.camOffset[1], nextTarget.pos[2] + nextTarget.camOffset[2]);
-            tourTravelToTarget = new THREE.Vector3(nextTarget.pos[0], nextTarget.pos[1], nextTarget.pos[2]);
+            tourTravelToPos = new THREE.Vector3(dest.pos[0] + dest.camOffset[0], dest.pos[1] + dest.camOffset[1], dest.pos[2] + dest.camOffset[2]);
+            tourTravelToTarget = new THREE.Vector3(dest.pos[0], dest.pos[1], dest.pos[2]);
             tourTravelProgress = 0;
-            document.getElementById('tour-text').textContent = '🚀 漫游中: ' + nextTarget.name;
+            document.getElementById('tour-text').textContent = '🚀 漫游中: ' + dest.name;
           }
           // 平滑过渡
-          tourTravelProgress += 0.02; // 约50帧过渡
+          tourTravelProgress += 0.02;
           if (tourTravelProgress > 1) tourTravelProgress = 1;
           const ease = tourTravelProgress < 0.5
             ? 4 * tourTravelProgress * tourTravelProgress * tourTravelProgress
