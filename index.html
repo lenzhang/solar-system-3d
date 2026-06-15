@@ -10,7 +10,7 @@ body { background: #000; overflow: hidden; font-family: 'Microsoft YaHei', sans-
 canvas { display: block; }
 
 #controls {
-  position: absolute; top: 15px; left: 15px;
+  position: absolute; top: 15px; left: 95px;
   background: rgba(0,0,0,0.7); padding: 12px; border-radius: 10px;
   color: #fff; z-index: 100;
 }
@@ -63,14 +63,15 @@ canvas { display: block; }
   <button id="btn-asteroid" class="active">☄ 小行星带</button>
   <button id="btn-moons" class="active">🌙 卫星</button>
   <button id="btn-comets" class="active">☄ 彗星</button>
-  <label>速度: <span id="speed-val">0.3</span>x</label>
-  <input type="range" id="speed" min="0" max="5" step="0.1" value="0.3">
+  <label>速度: <span id="speed-val">1.0</span>x</label>
+  <input type="range" id="speed" min="0" max="10" step="0.1" value="1.0">
 </div>
 
 <!-- 左侧星体列表 -->
-<div id="body-list" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.6);padding:6px 4px;border-radius:6px;color:#fff;z-index:100;border:1px solid rgba(255,204,0,0.2);font-size:10px;white-space:nowrap;">
-  <h4 style="color:#ffcc00;margin:0 0 4px 4px;font-size:10px;">🪐 星体</h4>
-  <div id="body-list-items"></div>
+<div id="body-list" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.6);padding:8px 6px;border-radius:6px;color:#fff;z-index:100;border:1px solid rgba(255,204,0,0.2);font-size:10px;max-height:80vh;overflow-y:auto;overflow-x:hidden;width:90px;">
+  <h4 style="color:#ffcc00;margin:0 0 8px 0;font-size:10px;text-align:center;white-space:nowrap;">🪐 星体</h4>
+  <div id="body-list-items" style="display:flex;flex-direction:column;gap:2px;">
+  </div>
 </div>
 
 <div id="tour-status" style="position:absolute;top:15px;right:15px;background:rgba(0,0,0,0.7);padding:10px 15px;border-radius:8px;color:#ffcc00;font-size:13px;display:none;z-index:100;border:1px solid rgba(255,204,0,0.3);">
@@ -78,6 +79,7 @@ canvas { display: block; }
 </div>
 
 <div id="planet-info">
+  <div id="info-close" style="position:absolute;top:-8px;right:-8px;cursor:pointer;background:rgba(0,0,0,0.8);border:1px solid rgba(255,204,0,0.5);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:#ffcc00;font-size:14px;">✕</div>
   <h4 id="info-name"></h4>
   <p id="info-details"></p>
 </div>
@@ -148,7 +150,7 @@ function initApp() {
   let showAsteroid = true;
   let showMoons = true;
   let showComets = true;
-  let speedMultiplier = 0.3;
+  let speedMultiplier = 1.0;  // 默认 1 倍速度（实际播放速度 = 1.0 * 0.1 = 0.1x）
 
   const planets = [];
   const moons = [];
@@ -629,6 +631,9 @@ function initApp() {
             controls.target.copy(planet.group.position);
           }
         }
+      } else if (isFollowing) {
+        // 双击空白区域退出 focus
+        exitFocus();
       }
     });
 
@@ -701,6 +706,11 @@ function initApp() {
         document.getElementById('tour-text').textContent = '🚀 开始漫游: ' + tourTargets[tourIndex].name;
       } else {
         document.getElementById('tour-status').style.display = 'none';
+        // 退出漫游，平滑回到全景
+        returningToOverview = true;
+        returnStartPos = camera.position.clone();
+        returnStartTarget = controls.target.clone();
+        returnProgress = 0;
       }
     });
 
@@ -752,12 +762,35 @@ function initApp() {
       });
     });
 
+    // 平滑回到全景的过渡状态
+    let returningToOverview = false;
+    let returnStartPos = null;
+    let returnStartTarget = null;
+    let returnProgress = 0;
+    const OVERVIEW_POS = new THREE.Vector3(0, 250, 400);
+    const OVERVIEW_TARGET = new THREE.Vector3(0, 0, 0);
+
+    // 退出 focus：关闭按钮、ESC 键、点击空白区域，回到全景视图
+    function exitFocus() {
+      isFollowing = false;
+      followTarget = null;
+      document.getElementById('planet-info').style.display = 'none';
+      // 启动平滑过渡
+      returningToOverview = true;
+      returnStartPos = camera.position.clone();
+      returnStartTarget = controls.target.clone();
+      returnProgress = 0;
+    }
+    document.getElementById('info-close').addEventListener('click', exitFocus);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isFollowing) exitFocus();
+    });
     // 生成左侧星体列表
     const bodyListItems = document.getElementById('body-list-items');
     // 添加太阳
     const sunBtn = document.createElement('button');
     sunBtn.textContent = '☀ 太阳';
-    sunBtn.style.cssText = 'background:rgba(255,200,0,0.15);border:1px solid rgba(255,200,0,0.3);color:#ffcc00;padding:3px 5px;margin:1px 0;width:100%;text-align:left;cursor:pointer;border-radius:3px;font-size:10px;white-space:nowrap;';
+    sunBtn.style.cssText = 'background:rgba(255,200,0,0.15);border:1px solid rgba(255,200,0,0.3);color:#ffcc00;padding:2px 4px;cursor:pointer;border-radius:3px;font-size:10px;width:56px;text-align:center;flex-shrink:0;';
     sunBtn.onclick = () => focusOnBody({ name: '太阳', pos: [0,0,0], info: '太阳系的中心恒星，质量占太阳系总质量的99.86%，表面温度5500°C，直径139万公里。是离地球最近的恒星，类型为G2V黄矮星。' });
     bodyListItems.appendChild(sunBtn);
     
@@ -769,7 +802,7 @@ function initApp() {
       const r = parseInt(hex.substring(0, 2), 16);
       const g = parseInt(hex.substring(2, 4), 16);
       const b = parseInt(hex.substring(4, 6), 16);
-      btn.style.cssText = `background:rgba(${r},${g},${b},0.15);border:1px solid rgba(${r},${g},${b},0.3);color:#fff;padding:3px 5px;margin:1px 0;width:100%;text-align:left;cursor:pointer;border-radius:3px;font-size:10px;white-space:nowrap;`;
+      btn.style.cssText = `background:rgba(${r},${g},${b},0.15);border:1px solid rgba(${r},${g},${b},0.3);color:#fff;padding:2px 4px;cursor:pointer;border-radius:3px;font-size:10px;width:56px;text-align:center;flex-shrink:0;`;
       btn.onclick = () => focusOnBody({ name: p.data.name, pos: null, info: p.data.info, planet: p, desc: p.data.desc });
       bodyListItems.appendChild(btn);
     });
@@ -802,12 +835,12 @@ function initApp() {
         targetPos = [target.planet.group.position.x, 0, target.planet.group.position.z];
       }
 
-      // 根据星体大小计算合适的观察距离
-      let viewDistance = 30; // 默认距离
-      if (target.name === '太阳') viewDistance = 50;
+      // 根据星体大小计算合适的观察距离：距离 = radius * 3.5，让星体占约 25% 视野
+      let viewDistance = 20; // 默认距离（未知星体）
+      if (target.name === '太阳') viewDistance = 25;
       else if (target.planet) {
         const radius = target.planet.data.radius;
-        viewDistance = Math.max(15, radius * 8); // 根据行星大小调整距离
+        viewDistance = radius * 3.5; // 按行星半径缩放：水星~1.26，木星~12.6
       }
 
       const endPos = [targetPos[0] + viewDistance, viewDistance * 0.6, targetPos[2] + viewDistance];
@@ -844,6 +877,21 @@ function initApp() {
     function animate() {
       requestAnimationFrame(animate);
 
+      // 平滑回到全景的过渡动画
+      if (returningToOverview) {
+        returnProgress += 0.025;
+        if (returnProgress > 1) returnProgress = 1;
+        // easeInOutCubic
+        const ease = returnProgress < 0.5
+          ? 4 * returnProgress * returnProgress * returnProgress
+          : 1 - Math.pow(-2 * returnProgress + 2, 3) / 2;
+        camera.position.lerpVectors(returnStartPos, OVERVIEW_POS, ease);
+        controls.target.lerpVectors(returnStartTarget, OVERVIEW_TARGET, ease);
+        if (returnProgress >= 1) {
+          returningToOverview = false;
+        }
+      }
+
       // 漫游逻辑 - 在暂停时也运行，允许漫游覆盖相机控制
       if (isTouring) {
         const target = tourTargets[tourIndex];
@@ -858,7 +906,7 @@ function initApp() {
         if (tourPhase === 0) { // approach - 接近目标
           const startPos = [0, 120, 200];
           const endPos = [target.pos[0] + target.camOffset[0], target.pos[1] + target.camOffset[1], target.pos[2] + target.camOffset[2]];
-          const t = Math.min(1, tourTimer / 3); // 3秒接近
+          const t = Math.min(1, tourTimer / 5); // 5秒接近
           camera.position.x = startPos[0] + (endPos[0] - startPos[0]) * t;
           camera.position.y = startPos[1] + (endPos[1] - startPos[1]) * t;
           camera.position.z = startPos[2] + (endPos[2] - startPos[2]) * t;
@@ -877,7 +925,7 @@ function initApp() {
           camera.position.z = target.pos[2] + Math.sin(angle) * orbitRadius;
           camera.position.y = target.pos[1] + target.camOffset[1];
           controls.target.set(target.pos[0], target.pos[1], target.pos[2]);
-          if (tourTimer > 4) { // 环绕4秒后离开
+          if (tourTimer > 12) { // 环绕12秒后离开
             tourPhase = 2;
             tourTimer = 0;
           }
@@ -900,12 +948,12 @@ function initApp() {
           currentTargetPos = [followTarget.planet.group.position.x, 0, followTarget.planet.group.position.z];
         }
         
-        // 计算当前帧的目标相机位置
-        let viewDistance = 30;
-        if (followTarget.name === '太阳') viewDistance = 50;
+        // 计算当前帧的目标相机位置：距离 = radius * 3.5，让星体占约 25% 视野
+        let viewDistance = 20;
+        if (followTarget.name === '太阳') viewDistance = 25;
         else if (followTarget.planet) {
           const radius = followTarget.planet.data.radius;
-          viewDistance = Math.max(15, radius * 8);
+          viewDistance = radius * 3.5;
         }
         
         const currentEndPos = [currentTargetPos[0] + viewDistance, viewDistance * 0.6, currentTargetPos[2] + viewDistance];
@@ -936,7 +984,7 @@ function initApp() {
       }
 
       if (!isPaused) {
-        const dt = 0.016 * speedMultiplier;
+        const dt = 0.016 * speedMultiplier * 0.1;
 
         // 太阳自转
         sun.rotation.y += 0.05 * dt * 60;
@@ -948,14 +996,16 @@ function initApp() {
           p.group.position.z = Math.sin(p.angle) * p.data.distance;
           p.mesh.rotation.y += 0.2 * dt * 60;
 
-          // 动态标签缩放 - 根据相机距离调整，漫游时保持适中大小
+          // 动态标签缩放 - 根据相机距离和行星半径综合调整
           const dist = camera.position.distanceTo(p.group.position);
-          // 使用对数缩放避免近距离时标签过大
-          const labelScale = Math.max(0.5, Math.min(1.5, Math.log(dist + 1) / 5));
-          p.label.scale.set(12 * labelScale, 6 * labelScale, 1);
+          // 基础大小与行星半径正相关：水星(0.36)~小标签，木星(3.6)~大标签
+          const radiusFactor = p.data.radius / 0.66; // 以地球为基准(1.0)
+          // 距离系数：近距离偏小，远距离偏大，避免极端
+          const distFactor = Math.max(0.6, Math.min(1.5, Math.log(dist + 1) / 3.5));
+          p.label.scale.set(8 * radiusFactor * distFactor, 4 * radiusFactor * distFactor, 1);
           // 漫游时标签稍微大一些以便阅读
           if (isTouring) {
-            p.label.scale.set(14 * labelScale, 7 * labelScale, 1);
+            p.label.scale.set(10 * radiusFactor * distFactor, 5 * radiusFactor * distFactor, 1);
           }
         });
 
