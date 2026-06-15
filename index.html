@@ -42,17 +42,17 @@ canvas { display: block; }
   
   #body-list {
     position: absolute; left: 5px; top: 5px; transform: none;
-    width: 60px !important; padding: 3px; font-size: 7px;
-    max-height: 55vh; z-index: 200;
+    width: 50px !important; padding: 2px; font-size: 6px;
+    max-height: 50vh; z-index: 200;
     display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; gap: 1px !important;
     align-items: stretch !important;
   }
-  #body-list h4 { font-size: 7px; margin: 0 0 3px 0; text-align: center; }
+  #body-list h4 { font-size: 6px; margin: 0 0 2px 0; text-align: center; }
   #body-list-items {
     display: flex !important; flex-direction: column !important; gap: 1px !important;
     flex-wrap: nowrap !important;
   }
-  #body-list-items button { font-size: 7px !important; padding: 1px 2px !important; width: 100% !important; }
+  #body-list-items button { font-size: 6px !important; padding: 1px 2px !important; width: 100% !important; }
   
   #tour-status {
     top: 5px; right: 5px; font-size: 11px; padding: 6px 10px;
@@ -168,7 +168,10 @@ function initApp() {
   document.body.appendChild(renderer.domElement);
 
   // 相机初始位置 - 调整到适合放大后的太阳系
-  const camera = new THREE.PerspectiveCamera(60, fallbackW / fallbackH, 0.1, 10000);
+  // 竖屏模式下增加 FOV 让太阳系更居中
+  const isPortrait = fallbackW < fallbackH;
+  const cameraFOV = isPortrait ? 80 : 60;
+  const camera = new THREE.PerspectiveCamera(cameraFOV, fallbackW / fallbackH, 0.1, 10000);
   camera.position.set(0, 250, 400);
 
   // 控制器
@@ -1006,8 +1009,8 @@ function initApp() {
           }
         } else if (tourPhase === 1) { // travel - 平滑飞向当前目标
           // 计算目标位置（tourIndex 在 orbit→travel 时已经递增）
-          const dest = tourTargets[tourIndex];
           if (tourTravelToPos === null) {
+            const dest = tourTargets[tourIndex];
             if (dest.name !== '太阳') {
               const planet = planets.find(p => p.data.name === dest.name);
               if (planet) {
@@ -1019,17 +1022,7 @@ function initApp() {
             tourTravelProgress = 0;
             document.getElementById('tour-text').textContent = '🚀 漫游中: ' + dest.name;
           }
-          // 每帧更新目标位置，追踪行星实时位置
-          if (dest.name !== '太阳') {
-            const planet = planets.find(p => p.data.name === dest.name);
-            if (planet) {
-              tourTravelToTarget.x = planet.group.position.x;
-              tourTravelToTarget.z = planet.group.position.z;
-              tourTravelToPos.x = planet.group.position.x + dest.camOffset[0];
-              tourTravelToPos.z = planet.group.position.z + dest.camOffset[2];
-            }
-          }
-          // 平滑过渡
+          // 平滑过渡（目标位置固定，不再追踪行星运动）
           tourTravelProgress += 0.025;
           if (tourTravelProgress > 1) tourTravelProgress = 1;
           const ease = tourTravelProgress < 0.5
