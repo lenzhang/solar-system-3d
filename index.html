@@ -9,6 +9,7 @@
 body { background: #000; overflow: hidden; font-family: 'Microsoft YaHei', sans-serif; }
 canvas { display: block; }
 
+/* PC 端布局 */
 #controls {
   position: absolute; top: 15px; left: 95px;
   background: rgba(0,0,0,0.7); padding: 12px; border-radius: 10px;
@@ -24,6 +25,42 @@ canvas { display: block; }
 #controls button.active { background: rgba(255,204,0,0.3); border-color: #ffcc00; }
 #controls label { font-size: 12px; display: block; margin-top: 8px; }
 #controls input[type=range] { width: 100%; margin-top: 3px; }
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  #controls {
+    position: absolute; top: auto; bottom: 0; left: 0; right: 0;
+    transform: none;
+    background: rgba(0,0,0,0.85); padding: 10px; border-radius: 10px 10px 0 0;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    max-height: 45vh; overflow-y: auto; z-index: 200;
+  }
+  #controls h3 { width: 100%; text-align: center; margin-bottom: 4px; font-size: 12px; }
+  #controls button { font-size: 11px; padding: 4px 8px; margin: 0; }
+  #controls label { font-size: 11px; margin-top: 0; margin-left: 4px; }
+  #controls input[type=range] { width: 120px; }
+  
+  #body-list {
+    position: absolute; left: 5px; top: 5px; transform: none;
+    width: 56px !important; padding: 4px 3px; font-size: 9px;
+    max-height: 60vh; z-index: 200;
+  }
+  #body-list h4 { font-size: 9px; margin-bottom: 4px; }
+  #body-list-items button { font-size: 9px !important; padding: 1px 3px !important; width: 50px !important; }
+  
+  #tour-status {
+    top: 5px; right: 5px; font-size: 11px; padding: 6px 10px;
+  }
+  
+  #planet-info {
+    position: absolute; bottom: 46vh; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.85); padding: 8px 12px; border-radius: 8px;
+    max-width: 90vw; text-align: center; z-index: 200;
+    border: 1px solid rgba(255,204,0,0.5);
+  }
+  #planet-info h4 { font-size: 12px; color: #ffcc00; margin-bottom: 3px; }
+  #planet-info p { font-size: 11px; color: #ccc; }
+}
 
 #planet-info {
   position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
@@ -935,6 +972,8 @@ function initApp() {
           if (tourTimer > 8) { // 环绕8秒后飞向下一个
             tourPhase = 1;
             tourTimer = 0;
+            tourTravelProgress = 0;
+            tourTravelToPos = null;
             // 递增到下一个目标
             tourIndex++;
             if (tourIndex >= tourTargets.length) {
