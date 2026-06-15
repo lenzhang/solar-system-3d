@@ -1039,9 +1039,9 @@ function initApp() {
           // 距离系数：近距离偏小，远距离偏大，避免极端
           const distFactor = Math.max(0.6, Math.min(1.5, Math.log(dist + 1) / 3.5));
           p.label.scale.set(8 * radiusFactor * distFactor, 4 * radiusFactor * distFactor, 1);
-          // 漫游时标签稍微大一些以便阅读
+          // 漫游时标签更大更稳定，不随距离剧烈变化
           if (isTouring) {
-            p.label.scale.set(10 * radiusFactor * distFactor, 5 * radiusFactor * distFactor, 1);
+            p.label.scale.set(14 * radiusFactor, 7 * radiusFactor, 1);
           }
         });
 
