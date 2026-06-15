@@ -41,16 +41,18 @@ canvas { display: block; }
   #controls input[type=range] { width: 120px; }
   
   #body-list {
-    position: absolute; left: 0; top: 0; transform: none;
-    width: auto !important; padding: 3px; font-size: 8px;
-    max-height: 18vh; z-index: 200;
+    position: absolute; left: 5px; top: 5px; transform: none;
+    width: 60px !important; padding: 3px; font-size: 7px;
+    max-height: 55vh; z-index: 200;
+    display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; gap: 1px !important;
+    align-items: stretch !important;
   }
-  #body-list h4 { font-size: 8px; margin: 0 0 2px 0; }
+  #body-list h4 { font-size: 7px; margin: 0 0 3px 0; text-align: center; }
   #body-list-items {
-    display: flex !important; flex-direction: row !important; gap: 2px !important;
-    flex-wrap: wrap !important; justify-content: flex-start !important;
+    display: flex !important; flex-direction: column !important; gap: 1px !important;
+    flex-wrap: nowrap !important;
   }
-  #body-list-items button { font-size: 8px !important; padding: 1px 3px !important; width: auto !important; }
+  #body-list-items button { font-size: 7px !important; padding: 1px 2px !important; width: 100% !important; }
   
   #tour-status {
     top: 5px; right: 5px; font-size: 11px; padding: 6px 10px;
@@ -1004,8 +1006,8 @@ function initApp() {
           }
         } else if (tourPhase === 1) { // travel - 平滑飞向当前目标
           // 计算目标位置（tourIndex 在 orbit→travel 时已经递增）
+          const dest = tourTargets[tourIndex];
           if (tourTravelToPos === null) {
-            const dest = tourTargets[tourIndex];
             if (dest.name !== '太阳') {
               const planet = planets.find(p => p.data.name === dest.name);
               if (planet) {
@@ -1017,8 +1019,18 @@ function initApp() {
             tourTravelProgress = 0;
             document.getElementById('tour-text').textContent = '🚀 漫游中: ' + dest.name;
           }
+          // 每帧更新目标位置，追踪行星实时位置
+          if (dest.name !== '太阳') {
+            const planet = planets.find(p => p.data.name === dest.name);
+            if (planet) {
+              tourTravelToTarget.x = planet.group.position.x;
+              tourTravelToTarget.z = planet.group.position.z;
+              tourTravelToPos.x = planet.group.position.x + dest.camOffset[0];
+              tourTravelToPos.z = planet.group.position.z + dest.camOffset[2];
+            }
+          }
           // 平滑过渡
-          tourTravelProgress += 0.015;
+          tourTravelProgress += 0.025;
           if (tourTravelProgress > 1) tourTravelProgress = 1;
           const ease = tourTravelProgress < 0.5
             ? 4 * tourTravelProgress * tourTravelProgress * tourTravelProgress
