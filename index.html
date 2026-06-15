@@ -41,16 +41,16 @@ canvas { display: block; }
   #controls input[type=range] { width: 120px; }
   
   #body-list {
-    position: absolute; left: 50%; top: 5px; transform: translateX(-50%);
-    width: auto !important; padding: 4px 6px; font-size: 9px;
-    max-height: 15vh; z-index: 200;
+    position: absolute; left: 0; top: 0; transform: none;
+    width: auto !important; padding: 3px; font-size: 8px;
+    max-height: 18vh; z-index: 200;
   }
-  #body-list h4 { font-size: 9px; margin: 0; }
+  #body-list h4 { font-size: 8px; margin: 0 0 2px 0; }
   #body-list-items {
-    display: flex !important; flex-direction: row !important; gap: 4px !important;
-    flex-wrap: wrap !important; justify-content: center !important;
+    display: flex !important; flex-direction: row !important; gap: 2px !important;
+    flex-wrap: wrap !important; justify-content: flex-start !important;
   }
-  #body-list-items button { font-size: 9px !important; padding: 1px 4px !important; width: auto !important; }
+  #body-list-items button { font-size: 8px !important; padding: 1px 3px !important; width: auto !important; }
   
   #tour-status {
     top: 5px; right: 5px; font-size: 11px; padding: 6px 10px;
@@ -362,7 +362,7 @@ function initApp() {
 
     // 太阳标签
     const sunLabel = createLabel('☀ 太阳');
-    sunLabel.position.y = 14;
+    sunLabel.position.set(22, 14, 0);  // 向右偏移，避免被星体列表遮挡
     sun.add(sunLabel);
 
     // 太阳半径 = 12, 行星半径按真实比例缩放 (整体放大2倍，方便查看细节)
