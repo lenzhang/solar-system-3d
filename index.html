@@ -888,6 +888,11 @@ function initApp() {
     // 隐藏加载界面
     document.getElementById('loading').style.display = 'none';
 
+    // 页面加载完成后 5 秒自动开始漫游
+    setTimeout(() => {
+      document.getElementById('btn-tour').click();
+    }, 5000);
+
     // 动画循环
     function animate() {
       requestAnimationFrame(animate);
