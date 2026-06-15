@@ -41,12 +41,16 @@ canvas { display: block; }
   #controls input[type=range] { width: 120px; }
   
   #body-list {
-    position: absolute; left: 5px; top: 5px; transform: none;
-    width: 56px !important; padding: 4px 3px; font-size: 9px;
-    max-height: 60vh; z-index: 200;
+    position: absolute; left: 50%; top: 5px; transform: translateX(-50%);
+    width: auto !important; padding: 4px 6px; font-size: 9px;
+    max-height: 15vh; z-index: 200;
   }
-  #body-list h4 { font-size: 9px; margin-bottom: 4px; }
-  #body-list-items button { font-size: 9px !important; padding: 1px 3px !important; width: 50px !important; }
+  #body-list h4 { font-size: 9px; margin: 0; }
+  #body-list-items {
+    display: flex !important; flex-direction: row !important; gap: 4px !important;
+    flex-wrap: wrap !important; justify-content: center !important;
+  }
+  #body-list-items button { font-size: 9px !important; padding: 1px 4px !important; width: auto !important; }
   
   #tour-status {
     top: 5px; right: 5px; font-size: 11px; padding: 6px 10px;
