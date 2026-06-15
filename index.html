@@ -1014,7 +1014,7 @@ function initApp() {
             document.getElementById('tour-text').textContent = '🚀 漫游中: ' + dest.name;
           }
           // 平滑过渡
-          tourTravelProgress += 0.02;
+          tourTravelProgress += 0.025;
           if (tourTravelProgress > 1) tourTravelProgress = 1;
           const ease = tourTravelProgress < 0.5
             ? 4 * tourTravelProgress * tourTravelProgress * tourTravelProgress
