@@ -980,7 +980,7 @@ function initApp() {
         }
         if (tourPhase === 0) { // orbit - 环绕观察
           tourTimer += 0.016;
-          const orbitSpeed = 0.5;
+          const orbitSpeed = 0.2;  // 环绕速度
           const orbitRadius = Math.sqrt(target.camOffset[0] * target.camOffset[0] + target.camOffset[2] * target.camOffset[2]);
           const baseAngle = Math.atan2(camera.position.z - target.pos[2], camera.position.x - target.pos[0]);
           const angle = baseAngle + orbitSpeed * 0.016;
@@ -1018,7 +1018,7 @@ function initApp() {
             document.getElementById('tour-text').textContent = '🚀 漫游中: ' + dest.name;
           }
           // 平滑过渡
-          tourTravelProgress += 0.025;
+          tourTravelProgress += 0.015;
           if (tourTravelProgress > 1) tourTravelProgress = 1;
           const ease = tourTravelProgress < 0.5
             ? 4 * tourTravelProgress * tourTravelProgress * tourTravelProgress
